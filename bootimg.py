@@ -1230,7 +1230,7 @@ def parse_bootinfo(bootinfo):
         line = bootinfo.readline()
         if not line:
             break
-        lines = line.split(':')
+        lines = line.split(':', 1)
         if len(lines) < 1 or lines[0][0] == '#':
             continue
         function = functions.get(lines[0])
@@ -1422,7 +1422,7 @@ def unpack_bootimg(bootimg=None, ramdisk=None, directory=None):
     sys.stderr.write('bootimg file: %s\n' % bootimg)
     sys.stderr.write('output: kernel[.gz] ramdisk[.gz] second[.gz]\n')
     parse_bootimg(open(bootimg, 'rb'))
-	
+
     if ramdisk is None:
         if os.path.exists('ramdisk.gz'):
             ramdisk = 'ramdisk.gz'
@@ -2170,7 +2170,7 @@ if __name__ == '__main__':
                  '--unpack-qsb': unpack_qsb,
                  '--unpack-bootimg': unpack_bootimg,
                  '--remove-head': remove_head,
-				 '--unpack-ramdisk': unpack_ramdisk,
+                 '--unpack-ramdisk': unpack_ramdisk,
                  '--unpack-yaffs': unpack_yaffs,
                  '--unpack-yaffs2': unpack_yaffs,
                  '--unpack-yafffs': unpack_yaffs,
