@@ -1413,7 +1413,7 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
     os.rename('boot.img.tmp', 'boot-new.img')
 
 def unpack_bootimg(bootimg=None, ramdisk=None, directory=None):
-    shutil.copy('boot.img', 'boot-old.img')
+    #shutil.copy('boot.img', 'boot-old.img')
     if bootimg is None:
         bootimg = 'boot.img'
         if os.path.exists('recovery.img') and not os.path.exists('boot.img'):
