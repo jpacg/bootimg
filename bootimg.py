@@ -1243,60 +1243,8 @@ def parse_bootinfo(bootinfo):
 # below is only for usage...
 
 def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=None, cpiolist=None):
-    if cpiolist is None:
-        cpiolist = 'cpiolist.txt'
 
-    sys.stderr.write('arguments: [cpiolist file]\n')
-    sys.stderr.write('cpiolist file: %s\n' % cpiolist)
-    sys.stderr.write('output: ramdisk.cpio.gz\n')
-
-    tmp = open('ramdisk.cpio.gz.tmp', 'wb')
-    out = open('ramdisk.cpio.gz', 'wb')
-    cpiogz = tmp
-    
-    info = open(cpiolist, 'r')
-    compress_level = 6
-    
-    off2 = info.tell()
-    info.seek(0, 0)
-    for line in info.readlines():
-        lines = line.split(':')
-        if len(lines) < 1 or lines[0][0] == '#':
-            continue;
-        if lines[0].strip() == 'compress_level':
-            compress_level = int(lines[1], 10)
-            break
-    info.seek(off2, 0)
-
-    if compress_level <= 0:
-        cpiogz = tmp
-    else:
-        if compress_level > 9:
-            compress_level = 9
-        cpiogz = CPIOGZIP(None, 'wb', compress_level, tmp)
-    sys.stderr.write('compress_level: %d\n' % compress_level)
-    write_cpio(info, cpiogz)
-    #cpiogz.close()
-    tmp.close()
-    #info.close()
-
-    tmp = open('ramdisk.cpio.gz.tmp', 'rb')
-    info = open(cpiolist, 'r')
-    if try_add_head(tmp, out, info):
-        while True:
-            data = tmp.read(65536)
-            if not data:
-                break
-            out.write(data)
-        tmp.close()
-        out.close()
-        os.remove('ramdisk.cpio.gz.tmp')
-    else:
-        tmp.close()
-        out.close()
-        os.remove('ramdisk.cpio.gz')
-        os.rename('ramdisk.cpio.gz.tmp', 'ramdisk.cpio.gz')
-    info.close()
+	repack_ramdisk(cpiolist)
 
     global base, ramdisk_addr, second_addr, tags_addr, name, cmdline, page_size, padding_size
     if os.path.exists('ramdisk.cpio.gz'):
@@ -1423,48 +1371,7 @@ def unpack_bootimg(bootimg=None, ramdisk=None, directory=None):
     sys.stderr.write('output: kernel[.gz] ramdisk[.gz] second[.gz]\n')
     parse_bootimg(open(bootimg, 'rb'))
 
-    if ramdisk is None:
-        if os.path.exists('ramdisk.gz'):
-            ramdisk = 'ramdisk.gz'
-        elif os.path.exists('ramdisk'):
-            ramdisk = 'ramdisk'
-        elif os.path.exists('ramdisk.cpio.gz'):
-            ramdisk = 'ramdisk.cpio.gz'
-        else:
-            ramdisk = 'ramdisk.gz'
-
-    if directory is None:
-        directory = 'initrd'
-
-    sys.stderr.write('arguments: [ramdisk file] [directory]\n')
-    sys.stderr.write('ramdisk file: %s\n' % ramdisk)
-    sys.stderr.write('directory: %s\n' % directory)
-    sys.stderr.write('output: cpiolist.txt\n')
-
-    if os.path.lexists(directory):
-        raise SystemExit('please remove %s' % directory)
-
-    tmp = open(ramdisk, 'rb')
-    cpiolist = open('cpiolist.txt', 'w')
-    check_mtk_head(tmp, cpiolist)
-    pos = tmp.tell()
-
-    compress_level = 0
-    magic = tmp.read(6)
-    if magic[:3] == struct.pack('3B', 0x1f, 0x8b, 0x08):
-        tmp.seek(pos, 0)
-        compress_level = 6
-        cpio = CPIOGZIP(None, 'rb', compress_level, tmp)
-    elif magic.decode('latin') == '070701':
-        tmp.seek(pos, 0)
-        cpio = tmp
-    else:
-        tmp.close()
-        raise IOError('invalid ramdisk')
-
-    cpiolist.write('compress_level:%d\n' % compress_level)
-    sys.stderr.write('compress: %s\n' % (compress_level > 0))
-    parse_cpio(cpio, directory, cpiolist)
+    unpack_ramdisk(ramdisk, directory)
 
 def unpack_updata(updata=None, debug=False):
     if updata is None and os.path.exists('UPDATA.APP'):
