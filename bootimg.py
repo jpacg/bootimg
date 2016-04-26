@@ -2,6 +2,7 @@
 #fileencoding: utf-8
 #Modified : jpacg <jpacg@vip.163.com>
 
+import io
 import os
 import sys
 import struct
@@ -805,7 +806,7 @@ def parse_cpio(cpio, directory, cpiolist):
         cpio.read(8) # rminor
         namesize = int(cpio.read(8), 16)
         cpio.read(8)
-        name = cpio.read(namesize - 1).decode('latin') # maybe utf8?
+        name = cpio.read(namesize - 1).decode('utf8')
         cpio.read(1)
         cpio.read(padding(namesize + 110))
         return name, mode, filesize
@@ -828,17 +829,17 @@ def parse_cpio(cpio, directory, cpiolist):
         if S_ISLNK(mode):
             location = cpio.read(filesize)
             cpio.read(padding(filesize))
-            cpiolist.write('slink %s %s %s\n' % (name, location, srwx))
+            cpiolist.write(u'slink %s %s %s\n' % (name, location, srwx))
         elif S_ISDIR(mode):
             try: os.makedirs(path)
             except os.error: pass
-            cpiolist.write('dir %s %s\n' % (name, srwx))
+            cpiolist.write(u'dir %s %s\n' % (name, srwx))
         elif S_ISREG(mode):
             tmp = open(path, 'wb')
             tmp.write(cpio.read(filesize))
             cpio.read(padding(filesize))
             tmp.close()
-            cpiolist.write('file %s %s %s\n' % (name, path, srwx))
+            cpiolist.write(u'file %s %s %s\n' % (name, path, srwx))
         else:
             cpio.read(filesize)
             cpio.read(padding(filesize))
@@ -870,11 +871,12 @@ def write_cpio(cpiolist, output):
         output.write(latin('%08x%08x' % (0, 0))) # dont support rmajor, rminor
         output.write(latin('%08x' % namesize))
         output.write(latin('%08x' % 0)) # chksum always be 0
-        output.write(latin(name))
+        output.write(name)
         output.write(struct.pack('1s', ''))
         output.write(padding(namesize + 110, 4))
 
     def cpio_mkfile(output, ino, name, path, mode, *kw):
+        name = name.encode('utf8')
         if os.path.split(name)[1] in ('su', 'busybox'):
             mode = '4555'
         mode = int(mode, 8) | S_IFREG
@@ -889,6 +891,7 @@ def write_cpio(cpiolist, output):
             sys.stderr.write('not found file %s, skip it\n' % path)
 
     def cpio_mkdir(output, ino, name, mode='755', *kw):
+        name = name.encode('utf8')
         #if name == 'tmp':
         #    mode = '1777'
         mode = int(mode, 8) | S_IFDIR
@@ -1754,8 +1757,8 @@ def check_mtk_head(imgfile, outinfofile):
         assert len(data) == 0x20, 'bad imgfile'
         (name,) = struct.unpack('32s', data)
         sys.stderr.write('Found header name %s\n' % name)
-        outinfofile.write('mode:mtk\n')
-        outinfofile.write('mtk_header_name:%s\n' % name.decode('latin').strip('\x00'))
+        outinfofile.write(u'mode:mtk\n')
+        outinfofile.write(u'mtk_header_name:%s\n' % name.decode('latin').strip('\x00'))
         imgfile.seek(0x200, 0)
         return True
     else:
@@ -1852,7 +1855,7 @@ def unpack_ramdisk(ramdisk=None, directory=None):
         raise SystemExit('please remove %s' % directory)
 
     tmp = open(ramdisk, 'rb')
-    cpiolist = open('cpiolist.txt', 'w')
+    cpiolist = io.open('cpiolist.txt', 'w', encoding='utf8')
     check_mtk_head(tmp, cpiolist)
     pos = tmp.tell()
 
@@ -1869,7 +1872,7 @@ def unpack_ramdisk(ramdisk=None, directory=None):
         tmp.close()
         raise IOError('invalid ramdisk')
 
-    cpiolist.write('compress_level:%d\n' % compress_level)
+    cpiolist.write(u'compress_level:%d\n' % compress_level)
     sys.stderr.write('compress: %s\n' % (compress_level > 0))
     parse_cpio(cpio, directory, cpiolist)
 
@@ -1886,7 +1889,7 @@ def repack_ramdisk(cpiolist=None):
     out = open('ramdisk.cpio.gz', 'wb')
     cpiogz = tmp
     
-    info = open(cpiolist, 'r')
+    info = io.open(cpiolist, 'r', encoding='utf8')
     compress_level = 6
     
     off2 = info.tell()
