@@ -1243,8 +1243,7 @@ def parse_bootinfo(bootinfo):
 # below is only for usage...
 
 def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=None, cpiolist=None):
-
-	repack_ramdisk(cpiolist)
+    repack_ramdisk(cpiolist)
 
     global base, ramdisk_addr, second_addr, tags_addr, name, cmdline, page_size, padding_size
     if os.path.exists('ramdisk.cpio.gz'):
