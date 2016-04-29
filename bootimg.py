@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #fileencoding: utf-8
 #Modified : jpacg <jpacg@vip.163.com>
 
@@ -829,17 +829,17 @@ def parse_cpio(cpio, directory, cpiolist):
             location = cpio.read(filesize)
             location = location.decode()
             cpio.read(padding(filesize))
-            cpiolist.write('slink %s %s %s\n' % (name, location, srwx))
+            cpiolist.write('slink\t%s\t%s\t%s\n' % (name, location, srwx))
         elif S_ISDIR(mode):
             try: os.makedirs(path)
             except os.error: pass
-            cpiolist.write('dir %s %s\n' % (name, srwx))
+            cpiolist.write('dir\t%s\t%s\n' % (name, srwx))
         elif S_ISREG(mode):
             tmp = open(path, 'wb')
             tmp.write(cpio.read(filesize))
             cpio.read(padding(filesize))
             tmp.close()
-            cpiolist.write('file %s %s %s\n' % (name, path, srwx))
+            cpiolist.write('file\t%s\t%s\t%s\n' % (name, path, srwx))
         else:
             cpio.read(filesize)
             cpio.read(padding(filesize))
@@ -932,7 +932,7 @@ def write_cpio(cpiolist, output):
         line = cpiolist.readline()
         if not line:
             break
-        lines = line.split()
+        lines = line.split('\t')
         if len(lines) < 1 or lines[0] == '#':
             continue
         function = functions.get(lines[0])
