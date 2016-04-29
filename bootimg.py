@@ -2,7 +2,6 @@
 #fileencoding: utf-8
 #Modified : jpacg <jpacg@vip.163.com>
 
-import io
 import os
 import sys
 import struct
@@ -46,19 +45,19 @@ def write_bootimg(output, kernel, ramdisk, second,
     assert len(name) <= 16, 'Error: board name too large'
     assert len(cmdline) <= 512, 'Error: kernel commandline too large'
 
-    if not isinstance(base, (int, long)):
+    if not isinstance(base, int):
         base = 0x10000000 # 0x00200000?
         sys.stderr.write('base is %s, using default base instead.\n' % type(base))
 
-    if not isinstance(ramdisk_addr, (int, long)):
+    if not isinstance(ramdisk_addr, int):
         ramdisk_addr = base + 0x01000000
         sys.stderr.write('ramdisk_addr is %s, using default ramdisk_addr instead.\n' % type(ramdisk_addr))
 
-    if not isinstance(second_addr, (int, long)):
+    if not isinstance(second_addr, int):
         second_addr = base + 0x00F00000
         sys.stderr.write('second_addr is %s, using default second_addr instead.\n' % type(second_addr))
 
-    if not isinstance(tags_addr, (int, long)):
+    if not isinstance(tags_addr, int):
         tags_addr = base + 0x00000100
         sys.stderr.write('tags_addr is %s, using default tags_addr instead.\n' % type(tags_addr))
 
@@ -73,7 +72,7 @@ def write_bootimg(output, kernel, ramdisk, second,
     if not hasattr(output, 'write'):
         output = sys.stdout
 
-    padding = lambda x: struct.pack('%ds' % ((~x + 1) & (padding_size - 1)), '')
+    padding = lambda x: struct.pack('%ds' % ((~x + 1) & (padding_size - 1)), b'')
 
     def getsize(x):
         if x is None:
@@ -109,12 +108,12 @@ def write_bootimg(output, kernel, ramdisk, second,
     id = sha.digest()
 
     kernel_addr = base + 0x00008000
-    output.write(struct.pack('<8s10I16s512s32s', 'ANDROID!',
+    output.write(struct.pack('<8s10I16s512s32s', b'ANDROID!',
         getsize(kernel), kernel_addr,
         getsize(ramdisk), ramdisk_addr,
         getsize(second), second_addr,
         tags_addr, page_size, getsize(dt_image), 0,
-        name, cmdline, id))
+        name.encode(), cmdline.encode(), id))
 
     output.write(padding(608))
     writecontent(output, kernel)
@@ -176,7 +175,7 @@ def parse_bootimg(bootimg):
     bootinfo.write('cmdline:%s\n' % cmdline.decode('latin').strip('\x00'))
 
     while True:
-        if bootimg.read(page_size) == struct.pack('%ds' % page_size, ''):
+        if bootimg.read(page_size) == struct.pack('%ds' % page_size, b''):
             continue
         bootimg.seek(-page_size, 1)
         size = bootimg.tell()
@@ -268,7 +267,7 @@ def parse_updata(updata, debug=False):
         data = updata.read(4)
         if not data:
             break
-        if data == struct.pack('4s', ''):
+        if data == struct.pack('4s', b''):
             continue
 
         data += updata.read(94)
@@ -358,7 +357,7 @@ def parse_zte_bin(binfile, debug=False):
     magic1 = binfile.read(64)
     assert magic1, 'invalid binfile'
     assert len(magic1) == 64, 'invalid binfile'
-    assert magic1 == struct.pack('64s', 'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
+    assert magic1 == struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
 
     data = binfile.read(4)
     partition_num = struct.unpack('<I', data)
@@ -400,7 +399,7 @@ def parse_zte_bin(binfile, debug=False):
 
     binfile.read(64)
     magic2 = binfile.read(64)
-    assert magic2 == struct.pack('64s', 'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
+    assert magic2 == struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
 
     binfile.close()
 
@@ -530,7 +529,7 @@ def parse_ext4_img(imgfile, output):
         assert (magic == magic1 or magic == magic2), 'unknown magic'
         if (magic == magic2):
             assert (size == 0x10), 'bad hole struct'
-            data = struct.pack('%ds' % (block_num * block_size), '')
+            data = struct.pack('%ds' % (block_num * block_size), b'')
             output.write(data)
         elif (magic == magic1):
             assert (size == block_num * block_size + 0x10), 'bad data struct'
@@ -544,7 +543,7 @@ def parse_ext4_img(imgfile, output):
 #    block_num = struct.unpack('<I', data)[0]
 #    reallySize = block_num * 0x1000
 #    addin = reallySize - nowSize
-#    data = struct.pack('%ds' % addin, '')
+#    data = struct.pack('%ds' % addin, b'')
 #    output.write(data)
 
     imgfile.close()
@@ -562,7 +561,7 @@ def computeFileCRC(filename):
             str = f.read(blocksize)
         f.close()
     except:
-        print "compute file crc failed!"
+        print("compute file crc failed!")
         return 0
     return crc
 
@@ -603,7 +602,7 @@ def repack_img_ext4(imgfile, output):
     data_num = 0
     hole_num = 0
 
-    empty_block = struct.pack('%ds' % block_size, '')
+    empty_block = struct.pack('%ds' % block_size, b'')
     imgfile.seek(0x0, 0)
     while True:
         last_ds = imgfile.tell()
@@ -679,7 +678,7 @@ def write_zte_bin(binfile, debug=False):
         head_size                 |  unsigned int
     '''
 
-    magic1 = struct.pack('64s', 'ZTE SOFTWARE UPDATE PACKAGE')
+    magic1 = struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE')
     binfile.write(magic1)
 
     files = ['partition.mbn,0x1c',
@@ -739,9 +738,9 @@ def write_zte_bin(binfile, debug=False):
         i += 1
 
     binfile.seek(info)
-    data = struct.pack('64s', '')
+    data = struct.pack('64s', b'')
     binfile.write(data)
-    magic2 = struct.pack('64s', 'ZTE SOFTWARE UPDATE PACKAGE')
+    magic2 = struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE')
     binfile.write(magic2)
 
     binfile.close()
@@ -828,18 +827,19 @@ def parse_cpio(cpio, directory, cpiolist):
         srwx = oct(S_IMODE(mode))
         if S_ISLNK(mode):
             location = cpio.read(filesize)
+            location = location.decode()
             cpio.read(padding(filesize))
-            cpiolist.write(u'slink %s %s %s\n' % (name, location, srwx))
+            cpiolist.write('slink %s %s %s\n' % (name, location, srwx))
         elif S_ISDIR(mode):
             try: os.makedirs(path)
             except os.error: pass
-            cpiolist.write(u'dir %s %s\n' % (name, srwx))
+            cpiolist.write('dir %s %s\n' % (name, srwx))
         elif S_ISREG(mode):
             tmp = open(path, 'wb')
             tmp.write(cpio.read(filesize))
             cpio.read(padding(filesize))
             tmp.close()
-            cpiolist.write(u'file %s %s %s\n' % (name, path, srwx))
+            cpiolist.write('file %s %s %s\n' % (name, path, srwx))
         else:
             cpio.read(filesize)
             cpio.read(padding(filesize))
@@ -854,9 +854,10 @@ def write_cpio(cpiolist, output):
         output: file object
     '''
 
-    padding = lambda x, y: struct.pack('%ds' % ((~x + 1) & (y - 1)), '')
+    padding = lambda x, y: struct.pack('%ds' % ((~x + 1) & (y - 1)), b'')
 
     def write_cpio_header(output, ino, name, mode=0, nlink=1, filesize=0):
+        name = name.encode()
         namesize = len(name) + 1
         latin = lambda x: x.encode('latin')
         output.write(latin('070701'))
@@ -872,11 +873,10 @@ def write_cpio(cpiolist, output):
         output.write(latin('%08x' % namesize))
         output.write(latin('%08x' % 0)) # chksum always be 0
         output.write(name)
-        output.write(struct.pack('1s', ''))
+        output.write(struct.pack('1s', b''))
         output.write(padding(namesize + 110, 4))
 
     def cpio_mkfile(output, ino, name, path, mode, *kw):
-        name = name.encode('utf8')
         if os.path.split(name)[1] in ('su', 'busybox'):
             mode = '4555'
         mode = int(mode, 8) | S_IFREG
@@ -891,7 +891,6 @@ def write_cpio(cpiolist, output):
             sys.stderr.write('not found file %s, skip it\n' % path)
 
     def cpio_mkdir(output, ino, name, mode='755', *kw):
-        name = name.encode('utf8')
         #if name == 'tmp':
         #    mode = '1777'
         mode = int(mode, 8) | S_IFDIR
@@ -901,7 +900,7 @@ def write_cpio(cpiolist, output):
         mode = int(mode, 8) | S_IFLNK
         filesize = len(path)
         write_cpio_header(output, ino, name, mode, 1, filesize)
-        output.write(path)
+        output.write(path.encode())
         output.write(padding(filesize, 4))
 
     def cpio_mknod(output, ino, *kw):
@@ -915,7 +914,7 @@ def write_cpio(cpiolist, output):
 
     def cpio_tailer(output, ino):
         name = 'TRAILER!!!'
-        write_cpio_header(output, ino, name, 0644) # 8进制权限644, 的确应该为0? 为调用fix_stat引起的bug.
+        write_cpio_header(output, ino, name, 0o644) # 8进制权限644, 的确应该为0? 为调用fix_stat引起的bug.
 
         # normally, padding is ignored by decompresser
         if hasattr(output, 'tell'):
@@ -1049,7 +1048,7 @@ class CPIOGZIP(GzipFile):
     # dont write filename
     def _write_gzip_header(self):
         self.fileobj.write(struct.pack('4B', 0x1f, 0x8b, 0x08, 0x00))
-        self.fileobj.write(struct.pack('4s', ''))
+        self.fileobj.write(struct.pack('4s', b''))
         self.fileobj.write(struct.pack('2B', 0x00, 0x03))
 
     # don't check crc and length
@@ -1661,7 +1660,7 @@ def repack_mali_logo(img=None):
     imgfile = open(img, 'wb')
 
     paddingsize = lambda x: ((~x + 1) & (0x10 - 1))
-    padding = lambda x: struct.pack('%ds' % paddingsize(x), '')
+    padding = lambda x: struct.pack('%ds' % paddingsize(x), b'')
 
     total = 8
     files = ['poweron.bmp',
@@ -1698,7 +1697,7 @@ def repack_mali_logo(img=None):
 
         head = struct.pack('<QIQQBBH32s', 0x27051956,
             bmpsize, offstart + 0x40, endoff,
-            id, total, 0,files[id].split('.')[0])
+            id, total, 0,files[id].split('.')[0].encode())
 
         imgfile.write(head)
         imgfile.write(bmpdata)
@@ -1757,8 +1756,8 @@ def check_mtk_head(imgfile, outinfofile):
         assert len(data) == 0x20, 'bad imgfile'
         (name,) = struct.unpack('32s', data)
         sys.stderr.write('Found header name %s\n' % name)
-        outinfofile.write(u'mode:mtk\n')
-        outinfofile.write(u'mtk_header_name:%s\n' % name.decode('latin').strip('\x00'))
+        outinfofile.write('mode:mtk\n')
+        outinfofile.write('mtk_header_name:%s\n' % name.decode('latin').strip('\x00'))
         imgfile.seek(0x200, 0)
         return True
     else:
@@ -1822,7 +1821,7 @@ def try_add_head(imgfile, outfile, imginfofile, mode=None, name=None):
             if lines[0].strip() == 'mtk_header_name':
                 name = lines[1].strip()
                 break;
-        data = struct.pack('<II32s472s', magic, size, name, ''.ljust(472,'\xff'))
+        data = struct.pack('<II32s472s', magic, size, name.encode(), b''.ljust(472, b'\xff'))
         outfile.write(data)
 
         imgfile.seek(off1, 0)
@@ -1855,7 +1854,7 @@ def unpack_ramdisk(ramdisk=None, directory=None):
         raise SystemExit('please remove %s' % directory)
 
     tmp = open(ramdisk, 'rb')
-    cpiolist = io.open('cpiolist.txt', 'w', encoding='utf8')
+    cpiolist = open('cpiolist.txt', 'w', encoding='utf8')
     check_mtk_head(tmp, cpiolist)
     pos = tmp.tell()
 
@@ -1872,7 +1871,7 @@ def unpack_ramdisk(ramdisk=None, directory=None):
         tmp.close()
         raise IOError('invalid ramdisk')
 
-    cpiolist.write(u'compress_level:%d\n' % compress_level)
+    cpiolist.write('compress_level:%d\n' % compress_level)
     sys.stderr.write('compress: %s\n' % (compress_level > 0))
     parse_cpio(cpio, directory, cpiolist)
 
@@ -1889,7 +1888,7 @@ def repack_ramdisk(cpiolist=None):
     out = open('ramdisk.cpio.gz', 'wb')
     cpiogz = tmp
     
-    info = io.open(cpiolist, 'r', encoding='utf8')
+    info = open(cpiolist, 'r', encoding='utf8')
     compress_level = 6
     
     off2 = info.tell()
