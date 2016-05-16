@@ -157,6 +157,7 @@ def parse_bootimg(bootimg):
         sys.stderr.write('found nonstandard tags_addr\n')
     if dt_size:
         sys.stderr.write('found device_tree_image\n')
+    cmdline = cmdline[:cmdline.find(b'\x00')]
 
     sys.stderr.write('base: 0x%x\n' % base)
     sys.stderr.write('ramdisk_addr: 0x%x\n' % ramdisk_addr)
