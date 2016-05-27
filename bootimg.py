@@ -878,8 +878,6 @@ def write_cpio(cpiolist, output):
         output.write(padding(namesize + 110, 4))
 
     def cpio_mkfile(output, ino, name, path, mode, *kw):
-        if os.path.split(name)[1] in ('su', 'busybox'):
-            mode = '4555'
         mode = int(mode, 8) | S_IFREG
         if os.path.lexists(path):
             filesize = os.path.getsize(path)
