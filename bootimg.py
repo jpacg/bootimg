@@ -21,10 +21,11 @@ def sha_file(sha, file):
             break
         sha.update(data)
 
+
 def write_bootimg(output, kernel, ramdisk, second,
         name, cmdline, base, ramdisk_addr, second_addr,
         tags_addr, page_size, padding_size, dt_image):
-    ''' make C8600-compatible bootimg.
+    """ make C8600-compatible bootimg.
         output: file object
         kernel, ramdisk, second: file object or string
         name, cmdline: string
@@ -34,7 +35,7 @@ def write_bootimg(output, kernel, ramdisk, second,
         https://android.googlesource.com/platform/system/core/+/master/mkbootimg/bootimg.h
 
         Note: padding_size is not equal to page_size in HuaWei C8600
-    '''
+    """
 
     if name is None:
         name = ''
@@ -123,8 +124,9 @@ def write_bootimg(output, kernel, ramdisk, second,
     if hasattr('output', 'close'):
         output.close()
 
+
 def parse_bootimg(bootimg):
-    ''' parse C8600-compatible bootimg.
+    """ parse C8600-compatible bootimg.
         write kernel to kernel[.gz]
         write ramdisk to ramdisk[.gz]
         write second to second[.gz]
@@ -133,17 +135,17 @@ def parse_bootimg(bootimg):
         https://android.googlesource.com/platform/system/core/+/master/mkbootimg/bootimg.h
 
         Note: padding_size is not equal to page_size in HuaWei C8600
-    '''
+    """
 
     bootinfo = open('bootinfo.txt', 'w')
     check_mtk_head(bootimg, bootinfo)
 
-    (   magic,
-        kernel_size, kernel_addr,
-        ramdisk_size, ramdisk_addr,
-        second_size, second_addr,
-        tags_addr, page_size, dt_size, zero,
-        name, cmdline, id4x8
+    (magic,
+     kernel_size, kernel_addr,
+     ramdisk_size, ramdisk_addr,
+     second_size, second_addr,
+     tags_addr, page_size, dt_size, zero,
+     name, cmdline, id4x8
     ) = struct.unpack('<8s10I16s512s32s', bootimg.read(608))
     bootimg.seek(page_size - 608, 1)
 
@@ -243,7 +245,7 @@ POSITION = {0x30000000: 'boot.img',
             0x60000000: 'recovery.img',
             0xf2000000: 'splash.565',}
 def parse_updata(updata, debug=False):
-    ''' parse C8600 UPDATA binary.
+    """ parse C8600 UPDATA binary.
         if debug is true or 1 or yes, write content to [position], else according POSITION
 
         UPDATA.APP Structure (only guess)
@@ -262,7 +264,7 @@ def parse_updata(updata, debug=False):
         header                  |       crc-ccitt for every 4096 of content
         content                 |
         padding                 |       padding to 4 bytes
-    '''
+    """
 
     while True:
         data = updata.read(4)
@@ -322,249 +324,8 @@ def parse_updata(updata, debug=False):
 
     updata.close()
 
-ZTE_PARTITIONS = {0x1 : 'qcsblhd_cfgdata.mbn',
-                  0x2 : 'qcsbl.mbn',
-                  0x3 : 'oemsbl.mbn,oemsblhd.mbn',
-                  0x4 : 'amss.mbn,amsshd.mbn',
-                  0x5 : 'appsboot.mbn,appsboothd.mbn',
-                  0x13: 'boot.img',
-                  0x15: 'recovery.img',
-                  0x19: 'splash.img',
-                  0x14: 'system.img',
-                  0x1c: 'partition.mbn',
-                  0x1d: 'partition_zte.mbn',}
-def parse_zte_bin(binfile, debug=False):
-    ''' parse ZTE image.bin.
-        if debug is true or 1 or yes, write content to [position], else according POSITION
 
-        image.bin Structure (only guess)
-        magic1                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
-        partition_num             |  unsigned int
-        partitions[partition_num] |  struct partitions
-        padding...                |  padding to 0x400 bytes
-        content                   |  parse according to partitions[]
-        null                      |  char[0x40]
-        magic2                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
 
-        struct partitions (only guess)
-        partitionid               |  unsigned int
-        partition_off             |  char *
-        partition_size            |  unsigned int
-        has_head                  |  unsigned int
-        head_off                  |  char *
-        head_size                 |  unsigned int
-    '''
-
-    magic1 = binfile.read(64)
-    assert magic1, 'invalid binfile'
-    assert len(magic1) == 64, 'invalid binfile'
-    assert magic1 == struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
-
-    data = binfile.read(4)
-    partition_num = struct.unpack('<I', data)
-    if debug:
-        sys.stderr.write('found %d partitions\n' % partition_num)
-
-    remain = partition_num[0]
-    last = binfile.tell()
-    while remain > 0:
-        binfile.seek(last)
-        data = binfile.read(24)
-        (   partitionid,
-            partition_off,
-            partition_size,
-            has_head,
-            head_off,
-            head_size,
-        ) = struct.unpack('<IIIIII', data)
-        last = binfile.tell()
-        filenames = ZTE_PARTITIONS.get(partitionid, "UNKNOWN_PARTITIONS_%d.img,UNKNOWN_PARTITIONS_%d_HD.img" % (partitionid, partitionid)).split(',')
-        if debug:
-            sys.stderr.write('partition 0x%x: %s, off 0x%x, size %d Bytes\n' % (partitionid, filenames[0], partition_off, partition_size))
-            if has_head == 1:
-                sys.stderr.write('\thas head %s, off 0x%x, size %d Bytes\n' % (filenames[1], head_off, head_size))
-        if has_head == 1:
-            sys.stderr.write('output: %s\n' % filenames[1])
-            output = open(filenames[1], 'wb')
-            binfile.seek(head_off)
-            data = binfile.read(head_size)
-            output.write(data)
-            output.close()
-        sys.stderr.write('output: %s\n' % filenames[0])
-        output = open(filenames[0], 'wb')
-        binfile.seek(partition_off)
-        data = binfile.read(partition_size)
-        output.write(data)
-        output.close()
-        remain -= 1
-
-    binfile.read(64)
-    magic2 = binfile.read(64)
-    assert magic2 == struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE'), 'invalid binfile'
-
-    binfile.close()
-
-def parse_qsb(binfile, debug=False):
-    ''' parse qsb file.
-        if debug is true or 1 or yes, write debug info to stdout
-
-        image.qsb Structure (only guess)
-        ??:0xC
-        文件总大小:0x4
-        BUILD_ID:0x40
-        ??:0x4
-        子文件数量:0x4
-        ??:0xA8(0x100对齐??)
-
-        {
-        文件名:0x40
-        分区名:0x20(可选)
-        ??:0x8
-        文件偏移量:0x4
-        文件大小:0x4
-        ??:0x10
-        ??:0x80(0x100对齐??)
-        }
-
-        magic1                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
-        partition_num             |  unsigned int
-        partitions[partition_num] |  struct partitions
-        padding...                |  padding to 0x400 bytes
-        content                   |  parse according to partitions[]
-        null                      |  char[0x40]
-        magic2                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
-
-        struct partitions (only guess)
-        partitionid               |  unsigned int
-        partition_off             |  char *
-        partition_size            |  unsigned int
-        has_head                  |  unsigned int
-        head_off                  |  char *
-        head_size                 |  unsigned int
-    '''
-
-    binfile.seek(0x54)
-    data = binfile.read(4)
-    partition_num = struct.unpack('<I', data)
-    if debug:
-        sys.stderr.write('found %d partitions\n' % partition_num)
-
-    remain = partition_num[0]
-    cur = 1
-    last = binfile.tell()
-    while cur <= remain:
-        binfile.seek(cur * 0x100)
-        data = binfile.read(0x80)
-        (   file_name,
-            part_name,
-            null,
-            null,
-            file_off,
-            file_size,
-            null,
-        ) = struct.unpack('<64s32sIIII16s', data)
-        file_name = file_name.strip("\0")
-        part_name = part_name.strip("\0")
-
-        if debug:
-            sys.stderr.write('partition 0x%x: %s[%s], off 0x%x, size %d Bytes\n' % (cur, part_name, file_name, file_off, file_size))
-        sys.stderr.write('output: %s\n' % file_name)
-        output = open(file_name, 'wb')
-        binfile.seek(file_off)
-        data = binfile.read(file_size)
-        output.write(data)
-        output.close()
-        cur += 1
-
-    binfile.close()
-
-def parse_ext4_img(imgfile, output):
-    ''' parse ext4_img by lenovo
-
-        ext4_img Structure (only guess)
-        UNKNOWN STRUCT            |  0x20
-        3AFF 26ED 0100 0000  2000 1000 bbbb bbbb
-        xxxx xxxx yyyy yyyy  zzzz zzzz aaaa aaaa
-        xxxx xxxx:really block_num, out 0x404~0x407, in + 0x30
-        yyyy yyyy:DATA STRUCT num + HOLE STRUCT num
-        zzzz zzzz:CRC32 of outfile
-        aaaa aaaa:0
-        bbbb bbbb:0010(data,system)/0004(pxafs,pxaNVM), block_size
-        DATA STRUCT               |  first in 0x20~2x2F,(MAGIC1 [8]=0xCAC1, BLOCK[4], STRUCT SIZE[4]=BLOCK*0x1000+0x10)
-        ext4_data                 |  UNKNOWN TAGs, before every struct, always in output 0xXXXXX000
-                                  |  out 0x400~403, in + 0x30,*4*block_size=size(Byte)
-                                  |  out 0x404~407, in + 0x30, BLOCK NUM, *block_size=size(Byte)unsigned int
-        HOLE STRUCT               |  end ,(MAGIC2 [8]=0xCAC3, BLOCK[4], STRUCT SIZE[4]=0x10),
-    '''
-#DATA STRUCT MAGIC1
-    magic1 = 0xCAC1
-#HOLE STRUCT MAGIC2
-    magic2 = 0xCAC3
-
-    data = imgfile.read(0x10)
-    assert len(data) == 0x10, 'bad imgfile'
-    (   null,
-        null,
-        null,
-        block_size,
-    ) = struct.unpack('<IIII', data)
-    sys.stderr.write('block_size: 0x%x\n' % block_size)
-
-#SKIP UNKNOWN STRUCT
-    imgfile.seek(0x20, 0)
-
-#data(do use struct info now)
-    while True:
-        data = imgfile.read(0x10)
-        if len(data) == 0:
-            break
-        assert len(data) == 0x10, 'bad imgfile'
-        (   magic,
-            magic_null,
-            block_num,
-            size,
-        ) = struct.unpack('<IIII', data)
-        sys.stderr.write('magic: 0x%x, magic_null: 0x%x, block_num: 0x%x, size: 0x%x\n' % (magic, magic_null, block_num, size))
-
-        assert (magic_null == 0), 'unknown magic'
-        assert (magic == magic1 or magic == magic2), 'unknown magic'
-        if (magic == magic2):
-            assert (size == 0x10), 'bad hole struct'
-            data = struct.pack('%ds' % (block_num * block_size), b'')
-            output.write(data)
-        elif (magic == magic1):
-            assert (size == block_num * block_size + 0x10), 'bad data struct'
-            data = imgfile.read(size - 0x10)
-            output.write(data)
-
-#end(useless now)
-#    nowSize = output.tell()
-#    imgfile.seek(0x30 + 0x400 + 4, 0)
-#    data = imgfile.read(4)
-#    block_num = struct.unpack('<I', data)[0]
-#    reallySize = block_num * 0x1000
-#    addin = reallySize - nowSize
-#    data = struct.pack('%ds' % addin, b'')
-#    output.write(data)
-
-    imgfile.close()
-    output.close()
-
-#not use now
-def computeFileCRC(filename):
-    try:
-        blocksize = 1024 * 64
-        f = open(filename, "rb")
-        str = f.read(blocksize)
-        crc = 0
-        while len(str) != 0:
-            crc = binascii.crc32(str,crc) & 0xffffffff
-            str = f.read(blocksize)
-        f.close()
-    except:
-        print("compute file crc failed!")
-        return 0
-    return crc
 
 def repack_img_ext4(imgfile, output):
     ''' repack ext4_img by lenovo
@@ -1373,363 +1134,6 @@ def unpack_bootimg(bootimg=None, ramdisk=None, directory=None):
 
     unpack_ramdisk(ramdisk, directory)
 
-def unpack_updata(updata=None, debug=False):
-    if updata is None and os.path.exists('UPDATA.APP'):
-        updata = 'UPDATA.APP'
-    sys.stderr.write('arguments: [updata file]\n')
-    sys.stderr.write('updata file: %s\n' % updata)
-    sys.stderr.write('output: splash.565 (565 file)\n')
-    sys.stderr.write('output: boot.img recover.img (bootimg file)\n')
-    sys.stderr.write('output: system.img userdata.img (yaffs2 image)\n')
-    parse_updata(open(updata, 'rb'), debug)
-
-def unpack_zte_bin(bin=None, debug=False):
-    if bin is None and os.path.exists('image.bin'):
-        bin = 'image.bin'
-    sys.stderr.write('arguments: [bin file]\n')
-    sys.stderr.write('bin file: %s\n' % bin)
-    parse_zte_bin(open(bin, 'rb'), debug)
-
-def unpack_qsb(bin=None, debug=False):
-    if bin is None and os.path.exists('image.bin'):
-        bin = 'image.bin'
-    sys.stderr.write('arguments: [bin file]\n')
-    sys.stderr.write('bin file: %s\n' % bin)
-    parse_qsb(open(bin, 'rb'), debug)
-
-def repack_zte_bin(bin=None, debug=False):
-    if bin is None:
-        bin = 'image.bin'
-    sys.stderr.write('arguments: [bin file]\n')
-    sys.stderr.write('bin file: %s\n' % bin)
-    write_zte_bin(open(bin, 'wb'), debug)
-
-def to_ext4(img=None, outfile=None):
-    if img is None and os.path.exists('system_ext4.img'):
-        img = 'system_ext4.img'
-    sys.stderr.write('arguments: [img file [out file]]\n')
-    sys.stderr.write('img file: %s\n' % img)
-    if outfile is None:
-        outfile = '%s.img.ext4' % img.split('.')[0]
-    sys.stderr.write('output: %s\n' % outfile)
-    parse_ext4_img(open(img, 'rb'), open(outfile, 'wb'))
-
-def to_img(img=None, outfile=None):
-    if img is None and os.path.exists('system_ext4.img.ext4'):
-        img = 'system_ext4.img.ext4'
-    sys.stderr.write('arguments: [img file [out file]]\n')
-    sys.stderr.write('img file: %s\n' % img)
-    if outfile is None:
-        outfile = '%s_repack.img' % img.split('.')[0]
-    sys.stderr.write('output: %s\n' % outfile)
-    repack_img_ext4(open(img, 'rb'), open(outfile, 'wb'))
-
-def test_dzlib(img=None, out=None):
-    if img is None:
-        sys.stderr.write('arguments: [img file [out file]]\n')
-        return
-    sys.stderr.write('img file: %s\n' % img)
-    if out is None:
-        out = 'zlib_%s' % os.path.basename(img)
-    sys.stderr.write('output: %s\n' % out)
-    #open file
-    imgfile = open(img, 'rb')
-    outfile = open(out, 'wb')
-
-    data = imgfile.read()
-    dataz = zlib.decompress(data)
-    outfile.write(dataz)
-
-    imgfile.close()
-    outfile.close()
-
-def test_czlib(img=None, out=None):
-    if img is None:
-        sys.stderr.write('arguments: [img file [out file]]\n')
-        return
-    sys.stderr.write('img file: %s\n' % img)
-    if out is None:
-        out = 'zlib_%s' % os.path.basename(img)
-    sys.stderr.write('output: %s\n' % out)
-    #open file
-    imgfile = open(img, 'rb')
-    outfile = open(out, 'wb')
-
-    data = imgfile.read()
-    dataz = zlib.compress(data, zlib.Z_DEFAULT_COMPRESSION)
-#Z_BEST_SPEED|Z_BEST_COMPRESSION|Z_DEFAULT_COMPRESSION|Z_FILTERED|Z_HUFFMAN_ONLY|Z_DEFAULT_STRATEGY|Z_FINISH|Z_NO_FLUSH|Z_SYNC_FLUSH|Z_FULL_FLUSH
-    outfile.write(dataz)
-
-    imgfile.close()
-    outfile.close()
-
-def dcompress_mtk_logo(img=None, out_base=None):
-    if img is None:
-        sys.stderr.write('arguments: [img file [out file basename]]\n')
-        return
-    sys.stderr.write('img file: %s\n' % img)
-    if out_base is None:
-        out_base = os.path.basename(img)
-    ext = os.path.splitext(out_base)[1]
-    out_base = os.path.splitext(out_base)[0]
-
-    #open file
-    offset2 = 0#当前进度
-    offset3 = 0
-    imgfile = open(img, 'rb')
-    outinfo = '%s_info.txt' % out_base
-    outinfofile = open(outinfo, 'w')
-
-    check_mtk_head(imgfile, outinfofile)
-    offset1 = imgfile.tell()#去除文件头后的真正开头
-
-    data = imgfile.read(0x4)
-    assert len(data) == 0x4, 'invalid logo'
-    (tag,) = struct.unpack('<I', data)
-    logo_num = tag
-    sys.stderr.write('Found %d logos.\n' % logo_num)
-    outinfofile.write('logo_num:%d\n' % logo_num)
-    data = imgfile.read(0x4)
-    assert len(data) == 0x4, 'invalid logo'
-    (size,) = struct.unpack('<I', data)
-    offset2 = imgfile.tell()
-    imgfile.seek(0, 2)
-    assert size <= imgfile.tell() - offset1, 'invalid logo'
-    imgfile.seek(offset2, 0)
-
-    data = imgfile.read(0x4)
-    (offset3,) = struct.unpack('<I', data)#当前图片位置(offset1+offset3)
-
-    for i in range(logo_num - 1):
-        data = imgfile.read(0x4)
-        (offset4,) = struct.unpack('<I', data)#下张图片位置(offset1+offset4)
-        offset2 = imgfile.tell()
-        imgfile.seek(offset1 + offset3, 0)
-
-        out = '%s_%d%s' %(out_base, i, ext)
-        sys.stderr.write('Output: %s\n' % out)
-        outfile = open(out, 'wb')
-
-        data = imgfile.read(offset4 - offset3)
-        dataz = zlib.decompress(data)
-
-        outfile.write(dataz)
-        outfile.close()
-
-        imgfile.seek(offset2, 0)
-        offset3 = offset4
-
-    imgfile.seek(offset1 + offset3, 0)
-
-    out = '%s_%d%s' %(out_base, logo_num - 1, ext)
-    sys.stderr.write('Output: %s\n' % out)
-    outfile = open(out, 'wb')
-
-    data = imgfile.read(size - offset4)
-    dataz = zlib.decompress(data)
-
-    outfile.write(dataz)
-    outfile.close()
-
-    outinfofile.close()
-    imgfile.close()
-
-def compress_mtk_logo(in_base=None, num=None, out=None):
-    if in_base is None:
-        sys.stderr.write('arguments: logo basename [num [out file]]\n')
-        return
-    if out is None:
-        out = in_base
-    ext = os.path.splitext(in_base)[1]
-    in_base = os.path.splitext(in_base)[0]
-    if num is not None:
-        num = int(str(num))
-
-    ininfo = '%s_info.txt' % in_base
-    ininfofile = open(ininfo, 'r')
-
-    if num is None:
-        for line in ininfofile.readlines():
-            lines = line.split(':')
-            if len(lines) < 1 or lines[0][0] == '#':
-                continue;
-            if lines[0].strip() == 'logo_num':
-                num = int(lines[1].strip())
-                break
-
-    sys.stderr.write('Output: %s\n' % out)
-    sys.stderr.write('Compressing %d logos.\n' % num)
-    tmp = open('%s.tmp' % out, 'wb')
-    data = struct.pack('<II', num, 0)
-    tmp.write(data)
-
-    offset1 = 0 #文件头
-    offset2 = 4*(2+num) #数据
-    offset3 = 0 #
-
-    for i in range(num):
-        data = struct.pack('<I', offset2)
-        tmp.write(data)
-
-        img = '%s_%d%s' %(in_base, i, ext)
-        sys.stderr.write('Processing logo file: %s\n' % img)
-        imgfile = open(img, 'rb')
-        data = imgfile.read()
-        imgfile.close()
-
-        offset1 = tmp.tell()
-        tmp.seek(offset2, 0)
-        dataz = zlib.compress(data, zlib.Z_BEST_COMPRESSION)
-        tmp.write(dataz)
-
-        offset2 = tmp.tell()
-        tmp.seek(offset1, 0)
-
-    tmp.seek(0x4, 0)
-    data = struct.pack('<I', offset2)
-    tmp.write(data)
-    tmp.close()
-
-    tmp = open('%s.tmp' % out, 'rb')
-    outfile = open(out, 'wb')
-    if try_add_head(tmp, outfile, ininfofile):
-        while True:
-            data = tmp.read(65536)
-            if not data:
-                break
-            outfile.write(data)
-        tmp.close()
-        os.remove('%s.tmp' % out)
-        outfile.close()
-    else:
-        tmp.close()
-        outfile.close()
-        os.remove(out)
-        os.rename('%s.tmp' % out, out)
-    ininfofile.close()
-
-def unpack_mali_logo(img=None):
-    if img is None:
-        sys.stderr.write('arguments: [img file]\n')
-        return
-    sys.stderr.write('img file: %s\n' % img)
-
-    #open file
-    imgfile = open(img, 'rb')
-
-    while True:
-        data = imgfile.read(0x40)
-        if len(data) < 0x10:
-            imgfile.close()
-            return
-        assert len(data) == 0x40, 'bad block'
-        (tag,size,start,end,id,total,null,name) = struct.unpack('<QIQQBBH32s', data)
-        name = name.strip('\x00')
-        assert tag == 0x27051956, 'invalid magic'
-        sys.stdout.write('img file(%d/%d): %s.bmp, size: %x, start: %x, end: %x\n'
-                % (id+1,total,name,size,start,end))
-        assert id < total, '\twrong id'
-        curoff = imgfile.tell()
-        assert start == curoff, '\twrong start'
-        assert end >= (start + size) or end == 0, '\twrong size/end'
-
-        data = imgfile.read(size)
-        assert len(data) == size, '\tbad data'
-        (tagbm,sizebm,null) = struct.unpack('<HQ%ds'%(size-10), data)
-        assert tagbm == 0x4D42, '\tnot BMP'
-        sys.stdout.write('\t\t, bmp_size: %x\n' % sizebm)
-        assert sizebm <= size, '\tsize not match'
-
-        outname = '%s.bmp' %name
-        outfile = open(outname, 'wb')
-        outfile.write(data)
-        outfile.close()
-        if end != 0:
-            imgfile.seek(end, 0)
-
-    imgfile.close()
-
-def repack_mali_logo(img=None):
-    if img is None:
-        sys.stderr.write('arguments: [img file]\n')
-        return
-    sys.stderr.write('img file: %s\n' % img)
-
-    #open file
-    imgfile = open(img, 'wb')
-
-    paddingsize = lambda x: ((~x + 1) & (0x10 - 1))
-    padding = lambda x: struct.pack('%ds' % paddingsize(x), b'')
-
-    total = 8
-    files = ['poweron.bmp',
-             'battery1.bmp',
-             'battery0.bmp',
-             'battery2.bmp',
-             'batteryfull.bmp',
-             'bootup.bmp',
-             'batterylow.bmp',
-             'battery3.bmp',]
-    files = ['poweron.bmp',
-             'bootup.bmp',
-             'batteryfull.bmp',
-             'batterylow.bmp',
-             'battery0.bmp',
-             'battery1.bmp',
-             'battery2.bmp',
-             'battery3.bmp',]
-    id = 0
-    offstart = 0x0
-    endoff = 0
-
-    while id<total:
-        sys.stdout.write('Processing bmp file(%d/%d): %s\n' % (id+1,total,files[id]))
-        bmp = open(files[id], 'rb')
-        bmpdata = bmp.read()
-        bmp.close()
-        bmpsize = len(bmpdata)
-
-        if id+1 == total:
-            endoff = 0
-        else:
-            endoff = offstart + 0x40 + bmpsize + paddingsize(bmpsize)
-
-        head = struct.pack('<QIQQBBH32s', 0x27051956,
-            bmpsize, offstart + 0x40, endoff,
-            id, total, 0,files[id].split('.')[0].encode())
-
-        imgfile.write(head)
-        imgfile.write(bmpdata)
-        imgfile.write(padding(bmpsize))
-        offstart = imgfile.tell()
-        id += 1
-    imgfile.close()
-
-def remove_head(img, out=None):
-    sys.stderr.write('arguments: img [out]\n')
-    sys.stderr.write('img file: %s\n' % img)
-    if out is None:
-        out = 'removed_%s' % os.path.basename(img)
-    sys.stderr.write('out file: %s\n' % out)
-    outinfo = '%s_info.txt' % out
-    sys.stderr.write('outinfo file: %s\n' % out)
-    #open file
-    imgfile = open(img, 'rb')
-    outfile = open(out, 'wb')
-    outinfofile = open(outinfo, 'w')
-
-    if check_mtk_head(imgfile, outinfofile):
-        while True:
-            data = imgfile.read(65536)
-            if not data:
-                break
-            outfile.write(data)
-    else:
-        assert False, 'Unsupported mode.'
-
-    imgfile.close()
-    outfile.close()
-    outinfofile.close()
 
 def check_mtk_head(imgfile, outinfofile):
     #备份原地址
@@ -1764,31 +1168,6 @@ def check_mtk_head(imgfile, outinfofile):
         imgfile.seek(offset, 0)
         return False
 
-def add_head(img, out=None, mode=None, name=None):
-    sys.stderr.write('arguments: img [out [mode [name]]]\n')
-    sys.stderr.write('mode can be \'auto\' if you want to skip it.\n')
-    sys.stderr.write('img file: %s\n' % img)
-    imginfo = '%s_info.txt' % img
-    sys.stderr.write('imginfo file: %s\n' % imginfo)
-    if out is None:
-        out = 'added_%s' % os.path.basename(img)
-    sys.stderr.write('out file: %s\n' % out)
-    #open file
-    imgfile = open(img, 'rb')
-    imginfofile = open(imginfo, 'r')
-    outfile = open(out, 'wb')
-
-    if try_add_head(imgfile, outfile, imginfofile, mode, name):
-        while True:
-            data = imgfile.read(65536)
-            if not data:
-                break
-            outfile.write(data)
-    else:
-        assert False, 'Unsupported mode.'
-    imgfile.close()
-    imginfofile.close()
-    outfile.close()
 
 def try_add_head(imgfile, outfile, imginfofile, mode=None, name=None):
     off2 = imginfofile.tell()
@@ -1931,137 +1310,11 @@ def repack_ramdisk(cpiolist=None):
         os.rename('ramdisk.cpio.gz.tmp', 'ramdisk.cpio.gz')
     info.close()
 
-def unpack_yaffs(image=None, directory=None):
-    if image is None:
-        image = 'userdata.img'
-    if directory is None and image[-4:] == '.img':
-        directory = image[:-4]
-
-    sys.stderr.write('arguments: [yaffs2 image] [directory]\n')
-    sys.stderr.write('yaffs2 image: %s\n' % image)
-    sys.stderr.write('directory: %s\n' % directory)
-
-    if os.path.lexists(directory):
-        raise SystemExit('please remove %s' % directory)
-
-    parse_yaffs2(open(image, 'rb'), directory)
-
-SIZE = {320*480: (320, 480),        # HVGA
-        240*320: (240, 320),        # QVGA
-        240*400: (240, 400),        # WQVGA400
-        240*432: (240, 432),        # WQVGA432
-        480*800: (480, 800),        # WVGA800
-        480*854: (480, 854),        # WVGA854
-        }
-def unpack_rle_565(rlefile, rawfile, function):
-    if rawfile is None:
-        if rlefile[-4] == '.':
-            rawfile = rlefile[:-4] + '.raw'
-        else:
-            rawfile = rlefile + '.raw'
-
-    if rawfile[-4] == '.':
-        pngfile = rawfile[:-4] + '.png'
-    else:
-        pngfile = rawfile + '.png'
-
-    sys.stderr.write('output: %s [%s]\n' % (rawfile, pngfile))
-
-    rle = open(rlefile, 'rb')
-    raw = open(rawfile, 'wb')
-    total = function(rle, raw)
-
-    try: import Image
-    except ImportError: return
-
-    size = SIZE.get(total)
-    if size is None: return
-
-    data = open(rawfile, 'rb')
-    Image.fromstring('RGB',  size, data.read(), 'raw').save(pngfile)
-    data.close()
-
-def unpack_rle(rlefile=None, rawfile=None):
-    if rlefile is None:
-        rlefile = 'initlogo.rle'
-    sys.stderr.write('arguments: [rle file] [raw file]\n')
-    sys.stderr.write('rle file: %s\n' % (rlefile))
-    unpack_rle_565(rlefile, rawfile, parse_rle)
-
-def unpack_565(rlefile=None, rawfile=None):
-    if rlefile is None:
-        rlefile = 'splash.565'
-    sys.stderr.write('arguments: [565 file] [raw file]\n')
-    sys.stderr.write('565 file: %s\n' % (rlefile))
-    unpack_rle_565(rlefile, rawfile, parse_565)
-
-def repack_rle_565(rawfile, rlefile, function):
-
-    if rawfile[-4:] != '.raw':
-        try: import Image
-        except ImportError:
-            sys.stderr.write('Please Install PIL (python-imaging)\n')
-            return None
-        try:
-            img = Image.open(rawfile)
-        except:
-            sys.stderr.write('Cannot Open Image File')
-            return None
-
-        from JpegImagePlugin import RAWMODE
-        if 'transparency' in img.info or img.mode == 'RGBA':
-            new = img.mode == 'RGBA' and img or img.convert('RGBA')
-            img = Image.new('RGB', new.size)
-            img.paste(new, (0, 0), new)
-        elif img.mode not in RAWMODE:
-            img = img.convert('RGB')
-
-        if img.size not in list(SIZE.values()):
-            sys.stderr.write('warning: Image is not HVGA, [W]QVGA, WVGA\n')
-
-        rawfile = rlefile[:-4] + '.raw'
-        data = open(rawfile, 'wb')
-        data.write(img.tostring())
-        data.close()
-
-    raw = open(rawfile, 'rb')
-    rle = open(rlefile, 'wb')
-    function(raw, rle)
-
-def repack_rle(rawfile=None, rlefile=None):
-    if rawfile is None:
-        rawfile = 'initlogo.raw'
-
-    if rlefile is None:
-        if rawfile[-4] == '.':
-            rlefile = rawfile[:-4] + '.rle'
-        else:
-            rlefile = rawfile + '.rle'
-
-    sys.stderr.write('arguments: [raw file] [rle file]\n')
-    sys.stderr.write('raw file: %s\n' % rawfile)
-    sys.stderr.write('rle file: %s\n' % rlefile)
-    repack_rle_565(rawfile, rlefile, write_rle)
-
-def repack_565(rawfile=None, rlefile=None):
-    if rawfile is None:
-        rawfile = 'splash.raw'
-
-    if rlefile is None:
-        if rawfile[-4] == '.':
-            rlefile = rawfile[:-4] + '.565'
-        else:
-            rlefile = rawfile + '.565'
-
-    sys.stderr.write('arguments: [raw file] [565 file]\n')
-    sys.stderr.write('raw file: %s\n' % rawfile)
-    sys.stderr.write('565 file: %s\n' % rlefile)
-    repack_rle_565(rawfile, rlefile, write_565)
-
 def showVersion():
     sys.stderr.write('bootimg:\n')
     sys.stderr.write('\tUpdate Date:20160601\n')
     sys.stderr.write('\tModified:jpacg@vip.163.com\n')
+
 
 def printErr(s):
     import sys
@@ -2072,32 +1325,10 @@ def printErr(s):
 if __name__ == '__main__':
 
     functions = {
-                 '--unpack-updata': unpack_updata,
-                 '--unpack-zte-bin': unpack_zte_bin,
-                 '--unpack-qsb': unpack_qsb,
                  '--unpack-bootimg': unpack_bootimg,
-                 '--remove-head': remove_head,
                  '--unpack-ramdisk': unpack_ramdisk,
-                 '--unpack-yaffs': unpack_yaffs,
-                 '--unpack-yaffs2': unpack_yaffs,
-                 '--unpack-yafffs': unpack_yaffs,
-                 '--unpack-rle': unpack_rle,
-                 '--unpack-565': unpack_565,
-                 '--to-ext4': to_ext4,
-                 '--to-img': to_img,
-                 '--dzlib': test_dzlib,
-                 '--czlib': test_czlib,
-                 '--dml': dcompress_mtk_logo,
-                 '--cml': compress_mtk_logo,
-                 '--uml': unpack_mali_logo,
-                 '--rml': repack_mali_logo,
-                 '--repack-zte-bin': repack_zte_bin,
                  '--repack-ramdisk': repack_ramdisk,
-                 '--repack-bootimg': repack_bootimg,
-                 '--add-head': add_head,
-                 '--repack-rle': repack_rle,
-                 '--repack-565': repack_565,
-                 '--cpio-list': cpio_list,
+                 '--repack-bootimg': repack_bootimg
                 }
 
     def usage():
