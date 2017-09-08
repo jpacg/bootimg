@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-#fileencoding: utf-8
-#Modified : jpacg <jpacg@vip.163.com>
+# -*- coding: utf-8 -*-
+# Modified : jpacg <jpacg@vip.163.com>
 
 import os
 import sys
 import struct
-import binascii
 import hashlib
-import zlib
 from stat import *
 import shutil
+from gzip import GzipFile
+
 
 def sha_file(sha, file):
     if file is None:
@@ -220,300 +220,14 @@ def parse_bootimg(bootimg):
 
     bootimg.close()
 
-# CRC CCITT
-crc_ccitt_table = []
-for crc in range(0, 256):
-    for x in range(0, 8):
-        if crc & 0x1:
-            crc = (crc >> 1) ^ 0x8408
-        else:
-            crc >>= 1
-    crc_ccitt_table.append(crc)
-
-def crc_ccitt(data, crc=0xffff):
-    for item in data:
-        crc = (crc >> 8) ^ crc_ccitt_table[crc & 0xff ^ item]
-    return crc
-
-#def write_crc(data, output):
-#    crc = crc_ccitt(data) ^ 0xffff
-#    # output.write(struct.pack('<H', crc))
-
-POSITION = {0x30000000: 'boot.img',
-            0x40000000: 'system.img',
-            0x50000000: 'userdata.img',
-            0x60000000: 'recovery.img',
-            0xf2000000: 'splash.565',}
-def parse_updata(updata, debug=False):
-    """ parse C8600 UPDATA binary.
-        if debug is true or 1 or yes, write content to [position], else according POSITION
-
-        UPDATA.APP Structure (only guess)
-        magic                   |       0x55 0xaa 0x5a 0xa5
-        header_length           |       unsigned int
-        tag1                    |       0x01 0x00 0x00 0x00
-        boardname               |       char[8]
-        position                |       unsigned int
-        content_length          |       unsigned int
-        date                    |       char[16] -> YYYY.MM.DD
-        time                    |       char[16] -> hh.mm.ss
-        INPUT                   |       char[16] -> INPUT
-        null                    |       char[16]
-        unknown                 |       2 bytes, unknown
-        tag2                    |       0x00 0x10 0x00 0x00
-        header                  |       crc-ccitt for every 4096 of content
-        content                 |
-        padding                 |       padding to 4 bytes
-    """
-
-    while True:
-        data = updata.read(4)
-        if not data:
-            break
-        if data == struct.pack('4s', b''):
-            continue
-
-        data += updata.read(94)
-        assert len(data) == 98, 'invalid updata'
-        (   magic,
-            header_length,
-            tag1,       # \x01\x00\x00\x00
-            boardname,
-            position,
-            content_length,
-            date,
-            time,
-            INPUT,
-            null,
-            unknown,    # 2 bytes
-            tag2,       # \x00\x10\x00\x00
-        ) = struct.unpack('<4sI4s8sII16s16s16s16s2s4s', data)
-
-        magic, = struct.unpack('!I', magic)
-        tag1, unknown, tag2 = struct.unpack('!IHI', tag1 + unknown + tag2)
-        padding = (~(header_length + content_length) + 1) & 3
-
-        assert magic == 0x55aa5aa5, 'invalid updata %x' % magic
-        assert tag1 == 0x01000000, 'invalid tag1 %x' % tag1
-        assert tag2 == 0x00100000, 'invalid tag2 %x' % tag2
-
-        remain = header_length - 98
-        header = list(struct.unpack('%dB' % remain, updata.read(remain)))
-
-        sys.stderr.write('0x%x %x %d\n' % (position, unknown, content_length))
-
-        if debug:
-            output = open('0x%x' % position, 'wb')
-        else:
-            output = open(POSITION.get(position, os.devnull), 'wb')
-
-        remain = content_length
-        while remain > 0:
-            size = remain > 4096 and 4096 or remain
-            data = updata.read(size)
-            if debug:
-                check = list(struct.unpack('%dB' % size, data))
-                check.append(header.pop(0))
-                check.append(header.pop(0))
-                assert crc_ccitt(check) == 0xf0b8
-            output.write(data)
-            remain -= size
-        output.close()
-
-        updata.seek(padding, 1)
-
-    updata.close()
-
-
-
-
-def repack_img_ext4(imgfile, output):
-    ''' repack ext4_img by lenovo
-
-        ext4_img Structure (only guess)
-        UNKNOWN STRUCT            |  0x20
-        3AFF 26ED 0100 0000  2000 1000 bbbb bbbb
-        xxxx xxxx yyyy yyyy  zzzz zzzz aaaa aaaa
-        xxxx xxxx:really block_num, out 0x404~0x407, in + 0x30
-        yyyy yyyy:DATA STRUCT num + HOLE STRUCT num
-        zzzz zzzz:CRC32 of outfile
-        aaaa aaaa:0
-        bbbb bbbb:0010(data,system)/0004(pxafs,pxaNVM), block_size
-        DATA STRUCT               |  first in 0x20~2x2F,(MAGIC1 [8]=0xCAC1, BLOCK[4], STRUCT SIZE[4]=BLOCK*0x1000+0x10)
-        ext4_data                 |  UNKNOWN TAGs, before every struct, always in output 0xXXXXX000
-                                  |  Inodes count, out 0x400~403, in + 0x30,*4*block_size=size(Byte)
-                                  |  Blocks count, out 0x404~407, in + 0x30, BLOCK NUM, *block_size=size(Byte)unsigned int
-        HOLE STRUCT               |  end ,(MAGIC2 [8]=0xCAC3, BLOCK[4], STRUCT SIZE[4]=0x10),
-    '''
-
-    imgfile.seek(0x0, 2)
-    file_size = imgfile.tell()
-    imgfile.seek(0x404, 0)
-    data = imgfile.read(4)
-    (block_num,) = struct.unpack('<I', data)
-    block_size = file_size / block_num
-    structnum = 0
-
-    imgfile.seek(0x0, 0)
-    data = imgfile.read()
-    crc = binascii.crc32(data) & 0xffffffff
-    head = struct.pack('<IIIIIIII', 0xED26FF3A, 0x1, 0x100020, block_size,
-                                    block_num, structnum, crc, 0)
-    output.write(head)
-
-    data_num = 0
-    hole_num = 0
-
-    empty_block = struct.pack('%ds' % block_size, b'')
-    imgfile.seek(0x0, 0)
-    while True:
-        last_ds = imgfile.tell()
-        cur_mode = 0
-        cur_block = 0
-        while True:
-            data = imgfile.read(block_size)
-            if len(data) == 0:
-                break
-            if not (data == empty_block):
-                if cur_mode == 1:
-                    cur_block += 1
-                elif cur_mode == 2:
-                    #cur_mode = 1#切换模式并输出
-                    break
-                else:
-                    cur_mode = 1
-                    cur_block += 1
-            else:
-                if cur_mode == 1:
-                    #cur_mode = 2#切换模式并输出
-                    break
-                elif cur_mode == 2:
-                    cur_block += 1
-                else:
-                    cur_mode = 2
-                    cur_block += 1
-        if cur_mode == 1:
-            magic = 0xCAC1
-            cur_size = cur_block * block_size + 0x10
-            data_num += 1
-        elif cur_mode == 2:
-            magic = 0xCAC3
-            cur_size = 0x10
-            hole_num += 1
-        else:
-            break
-        head = struct.pack('<IIII', magic, 0, cur_block, cur_size)
-        output.write(head)
-        imgfile.seek(last_ds, 0)
-        data = imgfile.read(cur_block * block_size)
-        if cur_mode == 1:
-            output.write(data)
-
-    #renew structnum
-    output.seek(0x10, 0)
-    structnum = data_num + hole_num
-    head = struct.pack('<IIII', block_num, structnum, crc, 0)
-    output.write(head)
-
-    imgfile.close()
-    output.close()
-
-def write_zte_bin(binfile, debug=False):
-    ''' parse ZTE image.bin.
-        if debug is true or 1 or yes, write content to [position], else according POSITION
-
-        image.bin Structure (only guess)
-        magic1                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
-        partition_num             |  unsigned int
-        partitions[partition_num] |  struct partitions
-        padding...                |  padding to 0x400 bytes
-        content                   |  parse according to partitions[]
-        null                      |  char[0x40]
-        magic2                    |  char[0x40]  'ZTE SOFTWARE UPDATE PACKAGE'
-
-        struct partitions (only guess)
-        partitionid               |  unsigned int
-        partition_off             |  char *
-        partition_size            |  unsigned int
-        has_head                  |  unsigned int
-        head_off                  |  char *
-        head_size                 |  unsigned int
-    '''
-
-    magic1 = struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE')
-    binfile.write(magic1)
-
-    files = ['partition.mbn,0x1c',
-             'partition_zte.mbn,0x1d',
-             'qcsblhd_cfgdata.mbn,0x1',
-             'qcsbl.mbn,0x2',
-             'oemsbl.mbn,0x3,oemsblhd.mbn',
-             'amss.mbn,0x4,amsshd.mbn',
-             'appsboot.mbn,0x5,appsboothd.mbn',
-             'boot.img,0x13',
-             'recovery.img,0x15',
-             'splash.img,0x19',
-             'system.img,0x14',]
-    partition_num = struct.pack('<I', len(files))
-    binfile.write(partition_num)
-
-    head = binfile.tell()
-    info = 0x400
-
-    remain = len(files)
-
-    i = 0
-    while i < remain:
-        binfile.seek(info)
-        file = files[i].split(',')
-        has_head = 0
-        head_off = 0
-        head_size = 0
-        if len(file) > 2:
-            has_head = 1
-            head_off = binfile.tell()
-            file_head = file[2]
-            f_head = open(file_head, 'rb')
-            data = f_head.read()
-            head_size = f_head.tell()
-            f_head.close()
-            binfile.write(data)
-        partition_off = binfile.tell()
-        partitionid = int(file[1], 16)
-        file = file[0]
-        f = open(file, 'rb')
-        data = f.read()
-        partition_size = f.tell()
-        f.close()
-        binfile.write(data)
-
-        info = binfile.tell()
-        binfile.seek(head)
-        data = struct.pack('<IIIIII', partitionid,
-                                      partition_off,
-                                      partition_size,
-                                      has_head,
-                                      head_off,
-                                      head_size)
-        binfile.write(data)
-        head = binfile.tell()
-        i += 1
-
-    binfile.seek(info)
-    data = struct.pack('64s', b'')
-    binfile.write(data)
-    magic2 = struct.pack('64s', b'ZTE SOFTWARE UPDATE PACKAGE')
-    binfile.write(magic2)
-
-    binfile.close()
 
 def cpio_list(directory, output=None):
-    ''' generate gen_cpio_init-compatible list for directory,
+    """ generate gen_cpio_init-compatible list for directory,
         if output is None, write to stdout
 
         official document:
         http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=blob;f=usr/gen_init_cpio.c
-    '''
+    """
 
     if not hasattr(output, 'write'):
         output = sys.stdout
@@ -540,15 +254,16 @@ def cpio_list(directory, output=None):
     if hasattr(output, 'close'):
         output.close()
 
+
 def parse_cpio(cpio, directory, cpiolist):
-    ''' parse cpio, write content under directory.
+    """ parse cpio, write content under directory.
         cpio: file object
         directory: string
         cpiolist: file object
 
         official document: (cpio newc structure)
         http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=blob;f=usr/gen_init_cpio.c
-    '''
+    """
 
     padding = lambda x: (~x + 1) & 3
 
@@ -609,12 +324,13 @@ def parse_cpio(cpio, directory, cpiolist):
     cpio.close()
     cpiolist.close()
 
+
 #根据system/core/cpio/mkbootfs.c对代码进行修正
 def write_cpio(cpiolist, output):
-    ''' generate cpio from cpiolist.
+    """ generate cpio from cpiolist.
         cpiolist: file object
         output: file object
-    '''
+    """
 
     padding = lambda x, y: struct.pack('%ds' % ((~x + 1) & (y - 1)), b'')
 
@@ -716,94 +432,7 @@ def write_cpio(cpiolist, output):
     cpiolist.close()
     output.close()
 
-def parse_yaffs2(image, directory):
-    ''' parse yaffs2 image.
 
-        official document: (utils/mkyaffs2image)
-        https://android.googlesource.com/platform/external/yaffs2/+/master/yaffs2/
-        spare: yaffs_PackedTags2 in yaffs_packedtags2.h
-        chunk: yaffs_ExtendedTags in yaffs_guts.h
-    '''
-
-    path = '.'
-    filelist = {1: '.'}
-
-    class Complete(Exception):
-        pass
-
-    def read_chunk(image):
-        chunk = image.read(2048)
-        spare = image.read(64)
-        if not chunk:
-            raise Complete
-        assert len(spare) >= 16
-        return chunk, spare
-
-    def process_chunk(image):
-        chunk, spare = read_chunk(image)
-
-        nil, objectid, nil, bytecount = struct.unpack('<4I', spare[:16])
-
-        if bytecount == 0xffff:
-            assert len(chunk) >= 460
-            (   filetype, parent,
-                nil, name, padding, mode,
-                uid, gid, atime, mtime, ctime,
-                filesize, equivalent, alias
-            ) = struct.unpack('<iiH256s2sI5Iii160s', chunk[:460])
-
-            # only for little-endian
-            # (   filetype, parent,
-            #     nil, name, mode,
-            #     uid, gid, atime, mtime, ctime,
-            #     filesize, equivalent, alias
-            # ) = struct.unpack('iiH256sI5Iii160s', chunk[:460])
-
-            parent = filelist.get(parent)
-            assert parent is not None
-
-            name = name.decode('latin').split('\x00')[0]
-            path = name and '%s/%s' % (parent, name) or parent
-            filelist[objectid] = path
-            fullname = '%s/%s' % (directory, path)
-
-            if filetype == 0: # unknown
-                pass
-            elif filetype == 1: # file
-                flag = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-                if hasattr(os, 'O_BINARY'):
-                    flag |= os.O_BINARY
-                output = os.open(fullname, flag, mode)
-                while filesize > 0:
-                    chunk, spare = read_chunk(image)
-                    nil, nil, nil, bytecount = struct.unpack('<4I', spare[:16])
-                    size = filesize < bytecount and filesize or bytecount
-                    os.write(output, chunk[:size])
-                    filesize -= size
-                os.close(output)
-            elif filetype == 2: # slink
-                alias = alias.decode('latin').split('\x00')[0]
-                try: os.symlink(alias, fullname)
-                except: sys.stderr.write('soft %s -> %s\n' % (fullname, alias))
-            elif filetype == 3: # dir
-                if not os.path.isdir(fullname):
-                    os.makedirs(fullname, mode)
-                try: os.chmod(fullname, mode)
-                except: sys.stderr.write('directory mode is not supported')
-            elif filetype == 4: # hlink
-                link = filelist.get(equivalent)
-                try: os.link(filelist.get(equivalent), fullname)
-                except: sys.stderr.write('hard %s -> %s\n' % (fullname, link))
-            elif filetype == 5: # special
-                pass
-
-    while True:
-        try: process_chunk(image)
-        except Complete: break
-
-    image.close()
-
-from gzip import GzipFile
 class CPIOGZIP(GzipFile):
     # dont write filename
     def _write_gzip_header(self):
@@ -815,114 +444,12 @@ class CPIOGZIP(GzipFile):
     def _read_eof(self):
         pass
 
-def parse_rle(rle, raw):
-    ''' convert 565-rle format to raw file.
 
-        official document:
-        https://android.googlesource.com/platform/build/+/master/tools/rgb2565/to565.c
-    '''
-    r = lambda x: int(((x >> 11) & 0x1f) << 3)
-    g = lambda x: int(((x >> 5) & 0x3f) << 2)
-    b = lambda x: int((x & 0x1f) << 3)
-
-    total = 0
-    while True:
-        data = rle.read(4)
-        if not data:
-            break
-        assert len(data) == 4
-        count, color = struct.unpack('<2H', data)
-        total += count
-        while count:
-            count -= 1
-            raw.write(struct.pack('3B', r(color), g(color), b(color)))
-    rle.close()
-    raw.close()
-    return total
-
-def parse_565(rle, raw):
-    ''' convert 565 format to raw file.
-
-        official document:
-       https://android.googlesource.com/platform/build/+/master/tools/rgb2565/to565.c
-    '''
-    r = lambda x: int(((x >> 11) & 0x1f) << 3)
-    g = lambda x: int(((x >> 5) & 0x3f) << 2)
-    b = lambda x: int((x & 0x1f) << 3)
-
-    total = 0
-    while True:
-        data = rle.read(2)
-        if not data:
-            break
-        assert len(data) == 2
-        color, = struct.unpack('<H', data)
-        total += 1
-        raw.write(struct.pack('3B', r(color), g(color), b(color)))
-    rle.close()
-    raw.close()
-    return total
-
-def write_rle(raw, rle):
-    ''' convert raw file to 565-rle format.
-    '''
-    x = lambda r, g, b: ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-
-    last = None
-    total = 0
-    while True:
-        rgb = raw.read(3)
-        if not rgb:
-            break
-        total += 1
-        assert len(rgb) == 3
-        color = x(*struct.unpack('3B', rgb))
-        if last is None:
-            pass
-        elif color == last and count != 0xffff:
-            count += 1
-            continue
-        else:
-            rle.write(struct.pack('<2H', count, last))
-        last = color
-        count = 1
-    if count:
-        rle.write(struct.pack('<2H', count, last))
-    raw.close()
-    rle.close()
-    return total
-
-def write_565(raw, rle):
-    ''' convert raw file to 565 format.
-    '''
-    x = lambda r, g, b: ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-
-    last = None
-    total = 0
-    while True:
-        rgb = raw.read(3)
-        if not rgb:
-            break
-        total += 1
-        assert len(rgb) == 3
-        color = x(*struct.unpack('3B', rgb))
-        rle.write(struct.pack('<H', color))
-    raw.close()
-    rle.close()
-    return total
-
-__all__ = [ 'parse_updata',
-            'parse_bootimg',
+__all__ = [ 'parse_bootimg',
             'write_bootimg',
             'parse_cpio',
             'write_cpio',
-            'parse_yaffs2',
-            'parse_rle',
-            'write_rle',
-            'parse_565',
-            'write_565',
             'cpio_list',
-            'POSITION',
             ]
 
 base = None
@@ -1097,7 +624,7 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
                 output.write(data)
             tmp.close()
             os.remove('boot.img.tmp')
-            out.close()
+            output.close()
             return
         else:
             tmp.close()
@@ -1344,9 +871,9 @@ if __name__ == '__main__':
 
     sys.argv.pop(0)
     cmd = sys.argv[0]
-    function = functions.get(cmd, None)
+    func = functions.get(cmd, None)
     sys.argv.pop(0)
-    if not function:
+    if not func:
         usage()
-    function(*sys.argv)
+    func(*sys.argv)
 
